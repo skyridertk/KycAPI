@@ -157,7 +157,7 @@ async function getKyc(type, res, my_contract, channel) {
     }
 }
 
-async function getCustomer(type, res, my_contract, channel) {
+async function getPendingKyc(type, res, my_contract, channel) {
     try {
         let {ccp, wallet, identity} = await loadWallet(uuid);
         if (!identity) {
@@ -182,6 +182,31 @@ async function getCustomer(type, res, my_contract, channel) {
     }
 }
 
+async function getCustomer(type, res, my_contract, channel) {
+    try {
+        let {ccp, wallet, identity} = await loadWallet(uuid);
+        if (!identity) {
+            return res.status(500).json({
+                message: 'An identity for the user "${uuid}" does not exist in the wallet'
+            });
+        }
+
+        const {gateway, contract} = await handleGateway(ccp, wallet, uuid, channel, my_contract);
+
+        // Evaluate the specified transaction.
+        const result = await contract.evaluateTransaction('queryAccount');
+        console.log(`Transaction has been evaluated, result is: ${result.toString()}`);
+
+
+        await gateway.disconnect();
+        return res.status(200).json({response: result.toString()});
+
+    } catch (error) {
+        //console.error(`Failed to evaluate transaction: ${error}`);
+        res.status(500).json({error: error});
+    }
+}
+
 async function saveKyc(res, my_contract, channel, userData) {
     try {
         let {ccp, wallet, identity} = await loadWallet(uuid);
@@ -193,15 +218,30 @@ async function saveKyc(res, my_contract, channel, userData) {
 
         const {gateway, contract} = await handleGateway(ccp, wallet, uuid, channel, my_contract);
 
-        //submit transaction
-        await contract.submitTransaction('createKYC', 'asset13', userData.firstname, userData.lastname, userData.address, userData.dateOfBirth, userData.gender, userData.status, userData.approvalCount, userData.owner, userData.proofOfResidence, userData.proofOfId);
+        //"CreateAsset", "Args":["asset","1","Honda","City","White", "CM","Honda","City","White", "CM", "CM", "CM"
+        /*
+            asset.assetID,
+            asset.firstname,
+            asset.lastname,
+            asset.dateOfBirth,
+            asset.gender,
+            asset.status,
+            asset.idNumber,
+            asset.approvalCount,
+            asset.owner,
+            asset.proofOfResidence,
+            asset.proofOfId
 
+        */
+        //submit transaction
+        //userData.address
+        await contract.submitTransaction('CreateAsset', 'asset', userData.firstname, userData.lastname,  userData.dateOfBirth, userData.gender, userData.status, userData.idNumber, userData.approvalCount, userData.owner, userData.proofOfResidence, userData.proofOfId);
 
         await gateway.disconnect();
         return res.status(200).json({message: 'Success'});
 
     } catch (error) {
-        //console.error(`Failed to evaluate transaction: ${error}`);
+        
         res.status(500).json({error: error});
     }
 }
@@ -217,8 +257,10 @@ async function saveCustomer(res, my_contract, channel, userData) {
 
         const {gateway, contract} = await handleGateway(ccp, wallet, uuid, channel, my_contract);
 
+        //"createAccount", "Args":["ACC","rode@gmail.com", "12345"
+
         //submit transaction
-        await contract.submitTransaction('createCustomer', 'asset13', userData.email, userData.uuid);
+        await contract.submitTransaction('createAccount', 'account', userData.email, userData.uuid);
 
         await gateway.disconnect();
         return res.status(200).json({message: 'Success'});
@@ -227,6 +269,35 @@ async function saveCustomer(res, my_contract, channel, userData) {
         //console.error(`Failed to evaluate transaction: ${error}`);
         return res.status(500).json({error: error});
     }
+}
+
+async function updateStatusKyc(res, my_contract, channel, userData) {
+    try {
+        let {ccp, wallet, identity} = await loadWallet(uuid);
+        if (!identity) {
+            return res.status(500).json({
+                message: 'An identity for the user "${uuid}" does not exist in the wallet'
+            });
+        }
+
+        const {gateway, contract} = await handleGateway(ccp, wallet, uuid, channel, my_contract);
+
+        //"createAccount", "Args":["ACC","rode@gmail.com", "12345"
+
+        //submit transaction
+        await contract.submitTransaction('createAccount', 'account', userData.email, userData.uuid);
+
+        await gateway.disconnect();
+        return res.status(200).json({message: 'Success'});
+
+    } catch (error) {
+        //console.error(`Failed to evaluate transaction: ${error}`);
+        return res.status(500).json({error: error});
+    }
+}
+
+function base64_encode(file, mimetype) {
+    return `data:${mimetype};base64,` + fs.readFileSync(file, 'base64');
 }
 
 app.post('/api/register', async (req, res) => {
@@ -405,6 +476,12 @@ app.post('/api/admin_kyc_action', (req, res)=>{
     //get user from mongo db
     const user = client.db(dbName).collection('admin').find({uuid: token}).toArray();
 
+    const {recordId, state} = req.body;
+
+
+    //update status blockchain
+    await updateStatusKyc(res, my_contract, channel, recordId, state)
+
     //return error if user not found
     if(user.length === 0){
         return res.status(400).json({
@@ -416,14 +493,10 @@ app.post('/api/admin_kyc_action', (req, res)=>{
 });
 
 app.get('/api/admin_kyc', async (req, res) =>{
-    let type = 'queryAllAccounts';
-    await getKyc(type, res);
+   
+    await getPendingKyc(type, res, my_contract, channel);
 });
 
-
-function base64_encode(file, mimetype) {
-    return `data:${mimetype};base64,` + fs.readFileSync(file, 'base64');
-}
 
 app.post('/api/kyc', upload.any(), async (req, res) => {
 
@@ -454,13 +527,21 @@ app.post('/api/kyc', upload.any(), async (req, res) => {
     let proofOfId = base64_encode(req.files[1].path, req.files[1].mimetype);
 
     let userData = {
+        assetID: 'assetID',
         firstname: req.body.firstname,
+        lastname: req.body.lastname,
+        dateOfBirth: req.body.dateOfBirth,
+        gender: req.body.gender,
+        status: req.body.status,
+        address: req.body.address,
+        idNumber: req.body.idNumber,
+        approvalCount: 0,
+        owner: wallet,
         proofOfResidence: proofOfRes,
         proofOfId: proofOfId,
-        owner: wallet
     };
 
-    await saveKyc(res, 'kyc', 'channel', userData);
+    await saveKyc(res, 'kyc', userData);
 
     return res.status(200).json({
         message: 'Kyc Successfully saved'
