@@ -35,36 +35,27 @@ client.connect().then(r => {
     console.log('Connected successfully to server');
 });
 
-function generateToken(user) {
+function generateToken(uuid) {
     const token = jwt.sign({
-        data: user.uuid,
+        data: uuid,
     }, process.env.TOKEN_SECRET, {
-        expiresIn: '1h'
+        expiresIn: '10h'
     });
     return token;
 }
 
-function handleLogin(user, password, res) {
+function handleLogin(userPassword, password, uuid, res) {
     try {
+        if (bcrypt.compareSync(password, userPassword)) {
+            const token = generateToken(uuid);
 
-        if (user.length > 0) {
-            user = user[0];
-            if (bcrypt.compareSync(password, user.password)) {
-                const token = generateToken(user);
-
-                return res.status(200).json({
-                    message: 'User logged in successfully',
-                    token: token
-                });
-            } else {
-                return res.status(400).json({
-                    message: 'Incorrect password',
-                    token: false
-                });
-            }
+            return res.status(200).json({
+                message: 'User logged in successfully',
+                token: token
+            });
         } else {
             return res.status(400).json({
-                message: 'User does not exist',
+                message: 'Incorrect password',
                 token: false
             });
         }
@@ -132,55 +123,112 @@ async function invoke(uuid, res, my_contract, channel) {
     }
 }
 
-async function getKyc(type, res, my_contract, channel) {
+async function getKyc(my_contract, uuid) {
+    let channel = "mychannel"
+
     try {
         let {ccp, wallet, identity} = await loadWallet(uuid);
         if (!identity) {
-            return res.status(500).json({
-                message: 'An identity for the user "${uuid}" does not exist in the wallet'
-            });
+            console.log(`An identity for the user "${uuid}" does not exist in the wallet`)
+            return false
         }
 
         const {gateway, contract} = await handleGateway(ccp, wallet, uuid, channel, my_contract);
 
         // Evaluate the specified transaction.
-        const result = await contract.evaluateTransaction(type);
+        const result = await contract.evaluateTransaction('QueryAssetsByOwner', uuid);
         console.log(`Transaction has been evaluated, result is: ${result.toString()}`);
 
-
         await gateway.disconnect();
-        return res.status(200).json({response: result.toString()});
+
+        return JSON.parse(result.toString())
 
     } catch (error) {
-        //console.error(`Failed to evaluate transaction: ${error}`);
-        res.status(500).json({error: error});
+        console.error(`Failed to evaluate transaction: ${error}`);
+        return false
     }
 }
 
-async function getPendingKyc(type, res, my_contract, channel) {
+async function getPendingKyc(my_contract, uuid) {
+    let channel = "mychannel"
+
     try {
         let {ccp, wallet, identity} = await loadWallet(uuid);
         if (!identity) {
-            return res.status(500).json({
-                message: 'An identity for the user "${uuid}" does not exist in the wallet'
-            });
+            console.log(`An identity for the user "${uuid}" does not exist in the wallet`)
+            return false
         }
 
         const {gateway, contract} = await handleGateway(ccp, wallet, uuid, channel, my_contract);
 
         // Evaluate the specified transaction.
-        const result = await contract.evaluateTransaction(type);
+        const result = await contract.evaluateTransaction('QueryAssetsByStatus', "pending");
         console.log(`Transaction has been evaluated, result is: ${result.toString()}`);
 
+        await gateway.disconnect();
+
+        return JSON.parse(result.toString())
+
+    } catch (error) {
+        console.error(`Failed to evaluate transaction: ${error}`);
+        return false
+    }
+}
+
+async function updateStatusKyc(my_contract, uuid, assetName, assetStatus) {
+    let channel = "mychannel"
+
+    console.log(assetName, assetStatus)
+
+    try {
+        let {ccp, wallet, identity} = await loadWallet(uuid);
+        if (!identity) {
+            console.log(`An identity for the user "${uuid}" does not exist in the wallet`)
+            return false
+        }
+
+        const {gateway, contract} = await handleGateway(ccp, wallet, uuid, channel, my_contract);
+
+        // Evaluate the specified transaction.
+        const result = await contract.evaluateTransaction('UpdateAsset', assetName, assetStatus);
+        console.log(`Transaction has been evaluated, result is: ${result.toString()}`);
 
         await gateway.disconnect();
-        return res.status(200).json({response: result.toString()});
+
+        return true
+
+    } catch (error) {
+        console.error(`Failed to evaluate transaction: ${error}`);
+        return false
+    }
+}
+
+async function getAllCustomers(my_contract, uuid) {
+    let channel = "mychannel"
+
+    try {
+        let {ccp, wallet, identity} = await loadWallet(uuid);
+        if (!identity) {
+            console.log(`An identity for the user "${uuid}" does not exist in the wallet`)
+            return false
+        }
+
+        const {gateway, contract} = await handleGateway(ccp, wallet, uuid, channel, my_contract);
+
+        // Evaluate the specified transaction.
+        const result = await contract.evaluateTransaction('queryAllAccounts', uuid);
+        console.log(`Transaction has been evaluated, result is: ${result.toString()}`);
+
+        await gateway.disconnect();
+
+        return JSON.parse(result.toString())
 
     } catch (error) {
         //console.error(`Failed to evaluate transaction: ${error}`);
-        res.status(500).json({error: error});
+        return false
     }
 }
+
 
 async function getCustomer(type, res, my_contract, channel) {
     try {
@@ -207,100 +255,73 @@ async function getCustomer(type, res, my_contract, channel) {
     }
 }
 
-async function saveKyc(res, my_contract, channel, userData) {
+async function saveKyc(my_contract, userData, uuid) {
+    let channel = "mychannel"
+
     try {
         let {ccp, wallet, identity} = await loadWallet(uuid);
         if (!identity) {
-            return res.status(500).json({
-                message: 'An identity for the user "${uuid}" does not exist in the wallet'
-            });
+
+            console.log(`An identity for the user "${uuid}" does not exist in the wallet`)
+            return false
         }
 
         const {gateway, contract} = await handleGateway(ccp, wallet, uuid, channel, my_contract);
 
-        //"CreateAsset", "Args":["asset","1","Honda","City","White", "CM","Honda","City","White", "CM", "CM", "CM"
-        /*
-            asset.assetID,
-            asset.firstname,
-            asset.lastname,
-            asset.dateOfBirth,
-            asset.gender,
-            asset.status,
-            asset.idNumber,
-            asset.approvalCount,
-            asset.owner,
-            asset.proofOfResidence,
-            asset.proofOfId
+        let result = await contract.submitTransaction('CreateAsset', userData.assetID, userData.firstname, userData.lastname,  userData.address, userData.dateOfBirth, userData.idNumber, userData.gender, userData.status,  userData.approvalCount, userData.owner, userData.proofOfResidence, userData.proofOfId);
 
-        */
-        //submit transaction
-        //userData.address
-        await contract.submitTransaction('CreateAsset', 'asset', userData.firstname, userData.lastname,  userData.dateOfBirth, userData.gender, userData.status, userData.idNumber, userData.approvalCount, userData.owner, userData.proofOfResidence, userData.proofOfId);
+        console.log('Transaction submitted: '+result.toString())
 
         await gateway.disconnect();
-        return res.status(200).json({message: 'Success'});
+        return true
 
     } catch (error) {
+
+        console.log("Failed to submit transaction: " + error)
         
-        res.status(500).json({error: error});
+        return false
     }
 }
 
-async function saveCustomer(res, my_contract, channel, userData) {
+async function saveCustomer(my_contract, userData) {
+    let channel = 'mychannel'
+    let uuid = userData.uuid
+    let email = userData.email
+    let accountID = userData.id
+
+    console.log(uuid)
+    console.log(email)
+
     try {
         let {ccp, wallet, identity} = await loadWallet(uuid);
         if (!identity) {
-            return res.status(500).json({
-                message: 'An identity for the user "${uuid}" does not exist in the wallet'
-            });
+            console.log(`An identity for the user "${uuid}" does not exist in the wallet`);
+            return false;
         }
 
         const {gateway, contract} = await handleGateway(ccp, wallet, uuid, channel, my_contract);
 
-        //"createAccount", "Args":["ACC","rode@gmail.com", "12345"
-
         //submit transaction
-        await contract.submitTransaction('createAccount', 'account', userData.email, userData.uuid);
+        let resp = await contract.submitTransaction('createAccount', accountID, email, uuid);
+        console.log("Transaction has been submitted: " + resp);
 
         await gateway.disconnect();
-        return res.status(200).json({message: 'Success'});
+
+        return true;
 
     } catch (error) {
-        //console.error(`Failed to evaluate transaction: ${error}`);
-        return res.status(500).json({error: error});
+        console.error(`Failed to evaluate transaction: ${error}`);
+        return false
     }
 }
 
-async function updateStatusKyc(res, my_contract, channel, userData) {
-    try {
-        let {ccp, wallet, identity} = await loadWallet(uuid);
-        if (!identity) {
-            return res.status(500).json({
-                message: 'An identity for the user "${uuid}" does not exist in the wallet'
-            });
-        }
-
-        const {gateway, contract} = await handleGateway(ccp, wallet, uuid, channel, my_contract);
-
-        //"createAccount", "Args":["ACC","rode@gmail.com", "12345"
-
-        //submit transaction
-        await contract.submitTransaction('createAccount', 'account', userData.email, userData.uuid);
-
-        await gateway.disconnect();
-        return res.status(200).json({message: 'Success'});
-
-    } catch (error) {
-        //console.error(`Failed to evaluate transaction: ${error}`);
-        return res.status(500).json({error: error});
-    }
-}
 
 function base64_encode(file, mimetype) {
     return `data:${mimetype};base64,` + fs.readFileSync(file, 'base64');
 }
-
+//DONE
 app.post('/api/register', async (req, res) => {
+    const UUID_ID = require('uuid').v4();
     try {
 
         let user = await client.db(dbName).collection('users').find({email: req.body.email}).toArray();
@@ -312,7 +333,7 @@ app.post('/api/register', async (req, res) => {
         } else {
 
             const UUID = uuid.v4();
-            let fabRes = await fabricUser.Enroll(UUID);
+            await fabricUser.Enroll(UUID);
 
             const {password} = req.body;
             const salt = bcrypt.genSaltSync(10);
@@ -322,13 +343,19 @@ app.post('/api/register', async (req, res) => {
 
             let user = await client.db(dbName).collection('users').insertOne(req.body);
 
-            const token = jwt.sign({
-                data: user.uuid,
-            }, process.env.TOKEN_SECRET, {
-                expiresIn: '1h'
-            });
+            const token = generateToken(UUID)
 
-            // await saveCustomer(res, my_contract, channel, req.body);
+            console.log("Here")
+            console.log(req.body)
+
+            let userdata = {
+                id: UUID_ID,
+                uuid: UUID,
+                email: req.body.email,
+            }
+
+            let status = await saveCustomer('kyc_account', userdata);
+            console.log(status)
 
             return res.status(200).json({
                 message: 'User created successfully',
@@ -345,22 +372,97 @@ app.post('/api/register', async (req, res) => {
 
 });
 
+
+//DONE
 app.post('/api/login', async (req, res) => {
+
     const { email, password} = req.body;
 
-    let user = await client.db(dbName).collection('users').find({email}).toArray();
+    let user = await client.db(dbName).collection('users').find({email: email}).toArray();
 
-    return handleLogin(user, password, res);
+    // if user not found
+    if (user.length === 0) {
+        return res.status(400).json({
+            message: `User with email ${email} does not exist`
+        });
+    }
+
+    //get user password
+    const userPassword = user[0].password;
+
+    //get user uuid
+    const userUUID = user[0].uuid;
+
+    return handleLogin(userPassword, password, userUUID, res);
 });
 
+//DONE
 app.post('/api/admin_login', async (req, res) => {
-    const { email, password} = req.body;
+    const { username, password} = req.body;
 
-    let user = await client.db(dbName).collection('admin').find({email}).toArray();
+    let user = await client.db(dbName).collection('admin').find({username: username}).toArray();
 
-    return handleLogin(user, password, res);
+    // if user not found
+    if (user.length === 0) {
+        return res.status(400).json({
+            message: `User with username ${username} does not exist`
+        });
+    }
+
+    //get user password
+    const userPassword = user[0].password;
+
+    //get user uuid
+    const userUUID = user[0].uuid;
+
+    return handleLogin(userPassword, password, userUUID, res);
 });
 
+//DONE
+app.post('/api/admin_register', async (req, res) => {
+    try {
+
+        let user = await client.db(dbName).collection('admin').find({username: req.body.username}).toArray();
+
+        if (user.length > 0) {
+            return res.status(400).json({
+                message: `User with username ${req.body.username} already exists`
+            });
+        } else {
+
+            const UUID = uuid.v4();
+            // await fabricUser.Enroll(UUID);
+
+            const {password} = req.body;
+            const salt = bcrypt.genSaltSync(10);
+            req.body.password = bcrypt.hashSync(password, salt);
+            req.body.uuid = UUID;
+            req.body.username = req.body.username.toLowerCase();
+
+            let user = await client.db(dbName).collection('admin').insertOne(req.body);
+
+            const token = generateToken(UUID)
+
+            console.log("Here")
+            console.log(req.body)
+
+
+            return res.status(200).json({
+                message: 'User created successfully',
+                token: token
+            });
+        }
+    } catch (error) {
+
+        return res.status(500).json({
+            message: `Something went wrong: ${error}`
+        });
+
+    }
+
+});
+
+//DONE
 app.get('/api/admin_validate', async (req, res)=>{
 
     //token from header
@@ -373,8 +475,15 @@ app.get('/api/admin_validate', async (req, res)=>{
         });
     }
 
+    
+    //decode token
+    const decoded = jwt.verify(token, process.env.TOKEN_SECRET);
+
+    const {data} = decoded;
+    console.log(data)
+
     //get user from mongo db
-    const user = await client.db(dbName).collection('users').find({uuid: token}).toArray();
+    const user = await client.db(dbName).collection('admin').find({uuid: data}).toArray();
 
     //return error if user not found
     if(user.length === 0){
@@ -383,18 +492,68 @@ app.get('/api/admin_validate', async (req, res)=>{
         });
     }
 
+    console.log(user)
+
     //get email and wallet
-    const {email, wallet} = user[0];
+    const {username, uuid} = user[0];
 
     return res.status(200).json({
         message: 'User validated successfully',
         state: true,
-        wallet: wallet,
+        wallet: uuid,
+        username: username,
+        token: token
+    });
+});
+
+//DONE
+app.get('/api/validate', async (req, res)=>{
+
+    //token from header
+    const token = req.headers.token;
+    console.log(token)
+
+    //throw error if token is not present
+    if(!token){
+        return res.status(401).json({
+            message: 'No token provided'
+        });
+    }
+
+    
+    //decode token
+    const decoded = jwt.verify(token, process.env.TOKEN_SECRET);
+
+    console.log(decoded)
+
+    const {data} = decoded;
+    console.log(data)
+
+    //get user from mongo db
+    const user = await client.db(dbName).collection('users').find({uuid: data}).toArray();
+
+    //return error if user not found
+    if(user.length === 0){
+        return res.status(400).json({
+            message: 'User not found'
+        });
+    }
+
+    console.log(user)
+
+    //get email and wallet
+    const {email, uuid} = user[0];
+
+    return res.status(200).json({
+        message: 'User validated successfully',
+        state: true,
+        wallet: uuid,
         email: email,
         token: token
     });
 });
 
+//DONE
 app.post('/api/refresh', async (req, res) => {
 
     if (!req.body.token) {
@@ -417,12 +576,8 @@ app.post('/api/refresh', async (req, res) => {
             });
         }
 
-        user = user[0];
-        const newToken = jwt.sign({
-            data: user.uuid,
-        }, process.env.TOKEN_SECRET, {
-            expiresIn: '1h'
-        });
+        let userUUID = user[0].uuid;
+        const newToken = generateToken(userUUID);
 
         return res.status(200).json({
             message: 'Token refreshed successfully',
@@ -436,12 +591,26 @@ app.post('/api/refresh', async (req, res) => {
 
 });
 
+//DONE
 app.get('/api/kyc', async (req, res) => {
-    //get token from header
+    //token from header
     const token = req.headers.token;
 
+    //throw error if token is not present
+    if(!token){
+        return res.status(401).json({
+            message: 'No token provided'
+        });
+    }
+    
+    //decode token
+    const decoded = jwt.verify(token, process.env.TOKEN_SECRET);
+
+    const {data} = decoded;
+    console.log(data)
+
     //get user from mongo db
-    const user = await client.db(dbName).collection('users').find({uuid: token}).toArray();
+    const user = await client.db(dbName).collection('users').find({uuid: data}).toArray();
 
     //return error if user not found
     if(user.length === 0){
@@ -449,21 +618,24 @@ app.get('/api/kyc', async (req, res) => {
             message: 'User not found'
         });
     }
+
+    console.log(user)
 
     //get email and wallet
-    const {email, wallet} = user[0];
+    const {username, uuid} = user[0];
 
-    let type = 'queryAllAccounts';
-    await getKyc(type, res);
+    let dataKyc = await getKyc('kycChaincode', uuid)
+
+    return res.status(200).json({
+        message: 'Kycs',
+        data: dataKyc
+    });
+
 });
 
+//DONE
 app.get('/api/admin_customers', async (req, res) => {
-    let type = 'queryAllAccounts';
-    await getCustomer(type, res);
-});
-
-app.post('/api/admin_kyc_action', (req, res)=>{
-    //get token from header
+    //token from header
     const token = req.headers.token;
 
     //throw error if token is not present
@@ -473,14 +645,15 @@ app.post('/api/admin_kyc_action', (req, res)=>{
         });
     }
 
+    
+    //decode token
+    const decoded = jwt.verify(token, process.env.TOKEN_SECRET);
+
+    const {data} = decoded;
+    console.log(data)
+
     //get user from mongo db
-    const user = client.db(dbName).collection('admin').find({uuid: token}).toArray();
-
-    const {recordId, state} = req.body;
-
-
-    //update status blockchain
-    await updateStatusKyc(res, my_contract, channel, recordId, state)
+    const user = await client.db(dbName).collection('admin').find({uuid: data}).toArray();
 
     //return error if user not found
     if(user.length === 0){
@@ -489,18 +662,72 @@ app.post('/api/admin_kyc_action', (req, res)=>{
         });
     }
 
-    return res.status(200).json({response: 'result.toString()'});
+    console.log(user)
+
+    //get email and wallet
+    const {username, uuid} = user[0];
+    
+    let dataCustomers = await getAllCustomers('kyc_account', 'appUser');
+
+    return res.status(200).json({
+        message: 'Customers',
+        data: dataCustomers
+    });
 });
 
+app.post('/api/admin_kyc_action', async (req, res)=>{
+    //token from header
+    const token = req.headers.token;
+    console.log(token)
+
+    //throw error if token is not present
+    if(!token){
+        return res.status(401).json({
+            message: 'No token provided'
+        });
+    }
+    
+    //decode token
+    const decoded = jwt.verify(token, process.env.TOKEN_SECRET);
+
+    console.log(decoded)
+
+    const {data} = decoded;
+    console.log(data)
+
+    //get user from mongo db
+    const user = await client.db(dbName).collection('admin').find({uuid: data}).toArray();
+
+    //return error if user not found
+    if(user.length === 0){
+        return res.status(400).json({
+            message: 'User not found'
+        });
+    }
+
+    console.log(user)
+
+    //get email and wallet
+    const {email, uuid} = user[0];
+
+    const {
+        assetName,
+        assetStatus
+    } = req.body;
+
+    console.log(req.body)
+
+    let statusUpdate = await updateStatusKyc('kycChaincode', 'appUser', assetName, assetStatus)
+
+    return res.status(200).json({
+        message: 'Updated Status',
+        status: statusUpdate
+    });
+});
+
+//DONE
 app.get('/api/admin_kyc', async (req, res) =>{
-   
-    await getPendingKyc(type, res, my_contract, channel);
-});
-
-
-app.post('/api/kyc', upload.any(), async (req, res) => {
-
-    //get token from header
+    //token from header
     const token = req.headers.token;
 
     //throw error if token is not present
@@ -509,25 +736,82 @@ app.post('/api/kyc', upload.any(), async (req, res) => {
             message: 'No token provided'
         });
     }
+    
+    //decode token
+    const decoded = jwt.verify(token, process.env.TOKEN_SECRET);
+
+    const {data} = decoded;
+    console.log(data)
 
     //get user from mongo db
-    const user = await client.db(dbName).collection('users').find({uuid: token}).toArray();
+    const user = await client.db(dbName).collection('admin').find({uuid: data}).toArray();
 
-    //throw error if user not found
+    //return error if user not found
     if(user.length === 0){
         return res.status(400).json({
             message: 'User not found'
         });
     }
 
-    // get wallet from user
-    const {wallet} = user[0];
+    console.log(user)
+
+    //get email and wallet
+    const {username, uuid} = user[0];
+
+   
+    let dataPending = await getPendingKyc('kycChaincode', 'appUser')
+
+    return res.status(200).json({
+        message: 'Kyc Pending',
+        data: dataPending
+    });
+});
+
+//DONE
+app.post('/api/kyc', upload.any(), async (req, res) => {
+
+    const UUID = require('uuid').v4();
+
+    //token from header
+    const token = req.headers.token;
+    console.log(token)
+
+    //throw error if token is not present
+    if(!token){
+        return res.status(401).json({
+            message: 'No token provided'
+        });
+    }
+
+    
+    //decode token
+    const decoded = jwt.verify(token, process.env.TOKEN_SECRET);
+
+    console.log(decoded)
+
+    const {data} = decoded;
+    console.log(data)
+
+    //get user from mongo db
+    const user = await client.db(dbName).collection('users').find({uuid: data}).toArray();
+
+    //return error if user not found
+    if(user.length === 0){
+        return res.status(400).json({
+            message: 'User not found'
+        });
+    }
+
+    console.log(user)
+
+    //get email and wallet
+    const {email, uuid} = user[0];
 
     let proofOfRes = base64_encode(req.files[0].path, req.files[0].mimetype);
     let proofOfId = base64_encode(req.files[1].path, req.files[1].mimetype);
 
     let userData = {
-        assetID: 'assetID',
+        assetID: UUID,
         firstname: req.body.firstname,
         lastname: req.body.lastname,
         dateOfBirth: req.body.dateOfBirth,
@@ -536,19 +820,22 @@ app.post('/api/kyc', upload.any(), async (req, res) => {
         address: req.body.address,
         idNumber: req.body.idNumber,
         approvalCount: 0,
-        owner: wallet,
+        owner: uuid,
         proofOfResidence: proofOfRes,
         proofOfId: proofOfId,
     };
 
-    await saveKyc(res, 'kyc', userData);
+    console.log(userData)
+
+    let status = await saveKyc('kycChaincode', userData, uuid);
 
     return res.status(200).json({
-        message: 'Kyc Successfully saved'
+        message: 'Kyc Successfully saved',
+        status: status
     });
 
 });
 
 
-app.listen(8081, '0.0.0.0');
-console.log('Running on http://0.0.0.0:8081');
+app.listen(8084, '0.0.0.0');
+console.log('Running on http://0.0.0.0:8084');
