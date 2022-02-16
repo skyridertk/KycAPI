@@ -189,8 +189,8 @@ async function updateStatusKyc(my_contract, uuid, assetName, assetStatus) {
 
         const {gateway, contract} = await handleGateway(ccp, wallet, uuid, channel, my_contract);
 
-        // Evaluate the specified transaction.
-        const result = await contract.evaluateTransaction('UpdateAsset', assetName, assetStatus);
+        // Update Tranasction transaction.
+        const result = await contract.submitTransaction('UpdateAsset', assetName, assetStatus);
         console.log(`Transaction has been evaluated, result is: ${result.toString()}`);
 
         await gateway.disconnect();
