@@ -191,7 +191,7 @@ async function updateStatusKyc(my_contract, uuid, assetName, assetStatus) {
 
         // Update Tranasction transaction.
         const result = await contract.submitTransaction('UpdateAsset', assetName, assetStatus);
-        console.log(`Transaction has been evaluated, result is: ${result.toString()}`);
+        console.log(`Transaction has been evaluated: ${result.toString()}`);
 
         await gateway.disconnect();
 
@@ -710,12 +710,11 @@ app.post('/api/admin_kyc_action', async (req, res)=>{
     //get email and wallet
     const {email, uuid} = user[0];
 
-    const {
-        assetName,
-        assetStatus
-    } = req.body;
-
     console.log(req.body)
+
+    const {
+        assetName, assetStatus
+    } = req.body;
 
     let statusUpdate = await updateStatusKyc('kycChaincode', 'appUser', assetName, assetStatus)
 
